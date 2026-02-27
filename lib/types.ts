@@ -35,6 +35,9 @@ export interface UserConfig {
   board_id: string;
   group_id: string;
   openphone_api_key?: string;
+  sms_provider?: 'openphone' | 'airophone';
+  airophone_api_key?: string;
+  airophone_phone?: string;
   created_at: string;
   updated_at: string;
 }

@@ -47,21 +47,30 @@ export default function ConfigurationsPage() {
     monday_api_key: '',
     board_id: '',
     group_id: '',
+    sms_provider: 'openphone' as 'openphone' | 'airophone',
     openphone_api_key: '',
     sender_phone: '',
+    airophone_api_key: '',
+    airophone_phone: '',
   });
 
   const [showKeys, setShowKeys] = useState({
     monday_api_key: false,
     openphone_api_key: false,
+    airophone_api_key: false,
   });
 
-  // Test OpenPhone connection state
+  // Test connection state
   const [isTestingOpenPhone, setIsTestingOpenPhone] = useState(false);
   const [testOpenPhoneResult, setTestOpenPhoneResult] = useState<{
     success: boolean;
     message: string;
     warning?: boolean;
+  } | null>(null);
+  const [isTestingAirophone, setIsTestingAirophone] = useState(false);
+  const [testAirophoneResult, setTestAirophoneResult] = useState<{
+    success: boolean;
+    message: string;
   } | null>(null);
 
   useEffect(() => {
@@ -100,8 +109,11 @@ export default function ConfigurationsPage() {
         monday_api_key: config.monday_api_key,
         board_id: config.board_id,
         group_id: config.group_id,
+        sms_provider: (config.sms_provider as 'openphone' | 'airophone') || 'openphone',
         openphone_api_key: config.openphone_api_key || '',
         sender_phone: config.sender_phone || '',
+        airophone_api_key: config.airophone_api_key || '',
+        airophone_phone: config.airophone_phone || '',
       });
     } else {
       setEditingConfig(null);
@@ -111,8 +123,11 @@ export default function ConfigurationsPage() {
         monday_api_key: '',
         board_id: '',
         group_id: '',
+        sms_provider: 'openphone',
         openphone_api_key: '',
         sender_phone: '',
+        airophone_api_key: '',
+        airophone_phone: '',
       });
     }
     setIsModalOpen(true);
@@ -121,8 +136,36 @@ export default function ConfigurationsPage() {
   const handleCloseModal = () => {
     setIsModalOpen(false);
     setEditingConfig(null);
-    setShowKeys({ monday_api_key: false, openphone_api_key: false });
+    setShowKeys({ monday_api_key: false, openphone_api_key: false, airophone_api_key: false });
     setTestOpenPhoneResult(null);
+    setTestAirophoneResult(null);
+  };
+
+  const handleTestAirophone = async () => {
+    if (!formData.airophone_api_key) {
+      setTestAirophoneResult({ success: false, message: 'Please enter your Airophone API key' });
+      return;
+    }
+    setIsTestingAirophone(true);
+    setTestAirophoneResult(null);
+    try {
+      const response = await fetch('https://ap.airosofts.com/api/external/balance', {
+        headers: { Authorization: `Bearer ${formData.airophone_api_key}` },
+      });
+      const data = await response.json();
+      if (response.ok && data.success) {
+        setTestAirophoneResult({
+          success: true,
+          message: `Connected! Credits balance: $${data.balance?.toFixed(2) ?? '0.00'}`,
+        });
+      } else {
+        setTestAirophoneResult({ success: false, message: data.error || 'Invalid API key' });
+      }
+    } catch (error: any) {
+      setTestAirophoneResult({ success: false, message: 'Could not reach Airophone API' });
+    } finally {
+      setIsTestingAirophone(false);
+    }
   };
 
   const handleTestOpenPhone = async () => {
@@ -583,103 +626,155 @@ export default function ConfigurationsPage() {
               </div>
             </div>
 
-            {/* OpenPhone API Key */}
+            {/* SMS Provider Selector */}
             <div>
               <label className="block text-sm font-medium text-neutral-700 mb-2">
-                OpenPhone API Key
+                SMS Provider
               </label>
-              <div className="relative">
-                <input
-                  type={showKeys.openphone_api_key ? 'text' : 'password'}
-                  value={formData.openphone_api_key}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      openphone_api_key: e.target.value,
-                    })
-                  }
-                  placeholder="Enter your OpenPhone API key"
-                  className="input-field pr-10"
-                />
-                <button
-                  type="button"
-                  onClick={() =>
-                    setShowKeys({
-                      ...showKeys,
-                      openphone_api_key: !showKeys.openphone_api_key,
-                    })
-                  }
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600"
-                >
-                  {showKeys.openphone_api_key ? (
-                    <EyeOff className="w-5 h-5" />
-                  ) : (
-                    <Eye className="w-5 h-5" />
-                  )}
-                </button>
-              </div>
-            </div>
-
-            {/* Sender Phone */}
-            <div>
-              <label className="block text-sm font-medium text-neutral-700 mb-2">
-                Sender Phone Number
-              </label>
-              <input
-                type="tel"
-                value={formData.sender_phone}
-                onChange={(e) =>
-                  setFormData({ ...formData, sender_phone: e.target.value })
-                }
-                placeholder="+1234567890"
-                className="input-field"
-              />
-            </div>
-
-            {/* Test OpenPhone Connection */}
-            {formData.openphone_api_key && formData.sender_phone && (
-              <div>
-                <button
-                  type="button"
-                  onClick={handleTestOpenPhone}
-                  disabled={isTestingOpenPhone}
-                  className="w-full btn-outline flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {isTestingOpenPhone ? (
-                    <>
-                      <div className="animate-spin rounded-full h-4 w-4 border-2 border-primary-600 border-t-transparent"></div>
-                      Testing Connection...
-                    </>
-                  ) : (
-                    <>
-                      <Phone className="w-4 h-4" />
-                      Test OpenPhone Connection
-                    </>
-                  )}
-                </button>
-                {testOpenPhoneResult && (
-                  <div
-                    className={`mt-3 p-3 rounded-lg text-sm ${
-                      testOpenPhoneResult.success
-                        ? testOpenPhoneResult.warning
-                          ? 'bg-yellow-50 text-yellow-800 border border-yellow-200'
-                          : 'bg-green-50 text-green-800 border border-green-200'
-                        : 'bg-red-50 text-red-800 border border-red-200'
+              <div className="grid grid-cols-2 gap-3">
+                {(['openphone', 'airophone'] as const).map((provider) => (
+                  <button
+                    key={provider}
+                    type="button"
+                    onClick={() => setFormData({ ...formData, sms_provider: provider })}
+                    className={`px-4 py-2.5 rounded-lg border text-sm font-medium transition-colors ${
+                      formData.sms_provider === provider
+                        ? 'border-primary-600 bg-primary-50 text-primary-700'
+                        : 'border-neutral-200 text-neutral-600 hover:border-neutral-300'
                     }`}
                   >
-                    <div className="flex items-start gap-2">
-                      {testOpenPhoneResult.success ? (
-                        <Check className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                    {provider === 'openphone' ? 'OpenPhone' : 'Airophone'}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* OpenPhone fields */}
+            {formData.sms_provider === 'openphone' && (
+              <>
+                <div>
+                  <label className="block text-sm font-medium text-neutral-700 mb-2">
+                    OpenPhone API Key
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showKeys.openphone_api_key ? 'text' : 'password'}
+                      value={formData.openphone_api_key}
+                      onChange={(e) => setFormData({ ...formData, openphone_api_key: e.target.value })}
+                      placeholder="Enter your OpenPhone API key"
+                      className="input-field pr-10"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowKeys({ ...showKeys, openphone_api_key: !showKeys.openphone_api_key })}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600"
+                    >
+                      {showKeys.openphone_api_key ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-neutral-700 mb-2">
+                    Sender Phone Number
+                  </label>
+                  <input
+                    type="tel"
+                    value={formData.sender_phone}
+                    onChange={(e) => setFormData({ ...formData, sender_phone: e.target.value })}
+                    placeholder="+1234567890"
+                    className="input-field"
+                  />
+                </div>
+                {formData.openphone_api_key && formData.sender_phone && (
+                  <div>
+                    <button
+                      type="button"
+                      onClick={handleTestOpenPhone}
+                      disabled={isTestingOpenPhone}
+                      className="w-full btn-outline flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {isTestingOpenPhone ? (
+                        <><div className="animate-spin rounded-full h-4 w-4 border-2 border-primary-600 border-t-transparent"></div>Testing Connection...</>
                       ) : (
-                        <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                        <><Phone className="w-4 h-4" />Test OpenPhone Connection</>
                       )}
-                      <div>
-                        <p className="font-medium">{testOpenPhoneResult.message}</p>
+                    </button>
+                    {testOpenPhoneResult && (
+                      <div className={`mt-3 p-3 rounded-lg text-sm ${testOpenPhoneResult.success ? testOpenPhoneResult.warning ? 'bg-yellow-50 text-yellow-800 border border-yellow-200' : 'bg-green-50 text-green-800 border border-green-200' : 'bg-red-50 text-red-800 border border-red-200'}`}>
+                        <div className="flex items-start gap-2">
+                          {testOpenPhoneResult.success ? <Check className="w-5 h-5 flex-shrink-0 mt-0.5" /> : <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />}
+                          <p className="font-medium">{testOpenPhoneResult.message}</p>
+                        </div>
                       </div>
-                    </div>
+                    )}
                   </div>
                 )}
-              </div>
+              </>
+            )}
+
+            {/* Airophone fields */}
+            {formData.sms_provider === 'airophone' && (
+              <>
+                <div>
+                  <label className="block text-sm font-medium text-neutral-700 mb-2">
+                    Airophone API Key
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showKeys.airophone_api_key ? 'text' : 'password'}
+                      value={formData.airophone_api_key}
+                      onChange={(e) => setFormData({ ...formData, airophone_api_key: e.target.value })}
+                      placeholder="airo_live_..."
+                      className="input-field pr-10"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowKeys({ ...showKeys, airophone_api_key: !showKeys.airophone_api_key })}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600"
+                    >
+                      {showKeys.airophone_api_key ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                    </button>
+                  </div>
+                  <p className="text-xs text-neutral-400 mt-1">Generate this key in Airophone → Settings → API Keys</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-neutral-700 mb-2">
+                    Sender Phone Number <span className="text-neutral-400 font-normal">(optional)</span>
+                  </label>
+                  <input
+                    type="tel"
+                    value={formData.airophone_phone}
+                    onChange={(e) => setFormData({ ...formData, airophone_phone: e.target.value })}
+                    placeholder="+1234567890"
+                    className="input-field"
+                  />
+                  <p className="text-xs text-neutral-400 mt-1">Leave blank to use your default Airophone number</p>
+                </div>
+                {formData.airophone_api_key && (
+                  <div>
+                    <button
+                      type="button"
+                      onClick={handleTestAirophone}
+                      disabled={isTestingAirophone}
+                      className="w-full btn-outline flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {isTestingAirophone ? (
+                        <><div className="animate-spin rounded-full h-4 w-4 border-2 border-primary-600 border-t-transparent"></div>Testing Connection...</>
+                      ) : (
+                        <><Phone className="w-4 h-4" />Test Airophone Connection</>
+                      )}
+                    </button>
+                    {testAirophoneResult && (
+                      <div className={`mt-3 p-3 rounded-lg text-sm ${testAirophoneResult.success ? 'bg-green-50 text-green-800 border border-green-200' : 'bg-red-50 text-red-800 border border-red-200'}`}>
+                        <div className="flex items-start gap-2">
+                          {testAirophoneResult.success ? <Check className="w-5 h-5 flex-shrink-0 mt-0.5" /> : <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />}
+                          <p className="font-medium">{testAirophoneResult.message}</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </>
             )}
 
             {/* Info Box */}
@@ -690,7 +785,8 @@ export default function ConfigurationsPage() {
                 <ul className="list-disc list-inside space-y-0.5 text-xs">
                   <li>Get your Monday.com API key from your account settings</li>
                   <li>Board ID can be found in the board URL</li>
-                  <li>OpenPhone API key is optional but required for SMS sending</li>
+                  <li>Choose OpenPhone or Airophone as your SMS provider</li>
+                  <li>Airophone API keys are generated in Airophone Settings → API Keys</li>
                 </ul>
               </div>
             </div>
