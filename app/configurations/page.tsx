@@ -149,14 +149,16 @@ export default function ConfigurationsPage() {
     setIsTestingAirophone(true);
     setTestAirophoneResult(null);
     try {
-      const response = await fetch('https://ap.airosofts.com/api/external/balance', {
-        headers: { Authorization: `Bearer ${formData.airophone_api_key}` },
+      const response = await fetch('/api/configs/test-airophone', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ airophone_api_key: formData.airophone_api_key }),
       });
       const data = await response.json();
       if (response.ok && data.success) {
         setTestAirophoneResult({
           success: true,
-          message: `Connected! Credits balance: $${data.balance?.toFixed(2) ?? '0.00'}`,
+          message: data.message,
         });
       } else {
         setTestAirophoneResult({ success: false, message: data.error || 'Invalid API key' });
