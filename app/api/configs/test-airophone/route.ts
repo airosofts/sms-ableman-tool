@@ -26,18 +26,11 @@ export async function POST(request: NextRequest) {
 
     const data = response.data;
 
-    if (data.success) {
-      return NextResponse.json({
-        success: true,
-        message: `Connected! Credits balance: $${data.balance?.toFixed(2) ?? '0.00'}`,
-        balance: data.balance,
-      });
-    }
-
-    return NextResponse.json(
-      { success: false, error: data.error || 'Invalid API key' },
-      { status: 400 }
-    );
+    return NextResponse.json({
+      success: true,
+      message: `Connected! Credits: ${data.credits ?? 0}`,
+      credits: data.credits,
+    });
 
   } catch (error: any) {
     if (error.response?.status === 401) {
