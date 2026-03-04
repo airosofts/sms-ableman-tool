@@ -60,7 +60,11 @@ export default function CampaignDetailsPage() {
   const [activeTab, setActiveTab] = useState<'overview' | 'messages'>('overview');
 
   // Main view tabs
-  const [mainView, setMainView] = useState<'details' | 'preview' | 'executions'>('details');
+  const [mainView, setMainView] = useState<'details' | 'preview' | 'executions' | 'deliverability'>('details');
+
+  // Deliverability state
+  const [deliverabilityData, setDeliverabilityData] = useState<any>(null);
+  const [deliverabilityLoading, setDeliverabilityLoading] = useState(false);
 
   // Modal and Toast states
   const [showExecuteConfirm, setShowExecuteConfirm] = useState(false);
@@ -166,6 +170,29 @@ export default function CampaignDetailsPage() {
       setMessageLogs(data || []);
     } catch (error) {
       console.error('Error fetching message logs:', error);
+    }
+  };
+
+  const fetchDeliverability = async () => {
+    if (executions.length === 0) return;
+    setDeliverabilityLoading(true);
+    try {
+      const sorted = [...executions].sort(
+        (a, b) => new Date(a.started_at).getTime() - new Date(b.started_at).getTime()
+      );
+      const startDate = sorted[0].started_at;
+      const last = sorted[sorted.length - 1];
+      const endDate = last.completed_at || new Date().toISOString();
+
+      const params = new URLSearchParams({ start_date: startDate, end_date: endDate });
+      const res = await fetch(`/api/deliverability?${params}`);
+      const data = await res.json();
+      if (data.success) setDeliverabilityData(data);
+      else setDeliverabilityData({ error: data.error });
+    } catch (err: any) {
+      setDeliverabilityData({ error: err.message });
+    } finally {
+      setDeliverabilityLoading(false);
     }
   };
 
@@ -460,6 +487,19 @@ export default function CampaignDetailsPage() {
               }`}
             >
               Execution History {executions.length > 0 && `(${executions.length})`}
+            </button>
+            <button
+              onClick={() => {
+                setMainView('deliverability');
+                if (!deliverabilityData) fetchDeliverability();
+              }}
+              className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors ${
+                mainView === 'deliverability'
+                  ? 'border-primary-500 text-primary-700'
+                  : 'border-transparent text-neutral-600 hover:text-neutral-900'
+              }`}
+            >
+              Deliverability
             </button>
           </div>
 
@@ -1246,6 +1286,138 @@ export default function CampaignDetailsPage() {
         )}
       </div>
     )}
+            {/* Deliverability Tab */}
+            {mainView === 'deliverability' && (
+              <div>
+                <div className="flex items-center justify-between mb-4">
+                  <p className="text-xs text-neutral-500">
+                    Delivery status from Telnyx for outbound messages across all executions
+                  </p>
+                  <button
+                    onClick={fetchDeliverability}
+                    disabled={deliverabilityLoading}
+                    className="btn-outline flex items-center gap-1.5 text-xs px-3 py-1.5"
+                  >
+                    {deliverabilityLoading ? (
+                      <div className="animate-spin rounded-full h-3 w-3 border-2 border-neutral-400 border-t-transparent" />
+                    ) : (
+                      <RefreshCw className="w-3 h-3" />
+                    )}
+                    Refresh
+                  </button>
+                </div>
+
+                {deliverabilityLoading && (
+                  <div className="text-center py-12">
+                    <div className="animate-spin rounded-full h-10 w-10 border-4 border-primary-500 border-t-transparent mx-auto mb-3" />
+                    <p className="text-sm text-neutral-600">Fetching from Telnyx...</p>
+                  </div>
+                )}
+
+                {!deliverabilityLoading && deliverabilityData?.error && (
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-sm text-red-700">
+                    {deliverabilityData.error}
+                  </div>
+                )}
+
+                {!deliverabilityLoading && deliverabilityData?.stats && (
+                  <div className="space-y-4">
+                    {/* Stats Cards */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                      <div className="bg-gradient-to-br from-primary-500 to-primary-600 rounded-lg p-3 text-white">
+                        <div className="text-xs opacity-90 mb-1">Total Sent</div>
+                        <div className="text-2xl font-bold">{deliverabilityData.stats.total}</div>
+                      </div>
+                      <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-lg p-3 text-white">
+                        <div className="text-xs opacity-90 mb-1">Delivered</div>
+                        <div className="text-2xl font-bold">{deliverabilityData.stats.delivered}</div>
+                      </div>
+                      <div className="bg-gradient-to-br from-red-500 to-red-600 rounded-lg p-3 text-white">
+                        <div className="text-xs opacity-90 mb-1">Failed</div>
+                        <div className="text-2xl font-bold">{deliverabilityData.stats.failed}</div>
+                      </div>
+                      <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg p-3 text-white">
+                        <div className="text-xs opacity-90 mb-1">Delivery Rate</div>
+                        <div className="text-2xl font-bold">{deliverabilityData.stats.deliveryRate}%</div>
+                      </div>
+                    </div>
+
+                    {/* Progress Bar */}
+                    <div className="bg-neutral-50 rounded-lg p-3 border border-neutral-200">
+                      <div className="flex justify-between text-xs text-neutral-600 mb-1.5">
+                        <span>Delivery Rate</span>
+                        <span className="font-medium">{deliverabilityData.stats.deliveryRate}%</span>
+                      </div>
+                      <div className="w-full bg-neutral-200 rounded-full h-2.5">
+                        <div
+                          className="bg-green-500 h-2.5 rounded-full transition-all"
+                          style={{ width: `${deliverabilityData.stats.deliveryRate}%` }}
+                        />
+                      </div>
+                      <div className="flex justify-between text-xs text-neutral-500 mt-1.5">
+                        <span>{deliverabilityData.stats.delivered} delivered</span>
+                        <span>{deliverabilityData.stats.failed} failed</span>
+                      </div>
+                    </div>
+
+                    {/* Records Table */}
+                    {deliverabilityData.records?.length > 0 && (
+                      <div>
+                        <h3 className="text-xs font-semibold text-neutral-700 mb-2">
+                          Message Records ({deliverabilityData.records.length})
+                        </h3>
+                        <div className="overflow-x-auto border border-neutral-200 rounded-lg">
+                          <table className="w-full text-xs">
+                            <thead>
+                              <tr className="bg-neutral-100 border-b border-neutral-200">
+                                <th className="text-left p-2 font-semibold text-neutral-700">To</th>
+                                <th className="text-left p-2 font-semibold text-neutral-700">From</th>
+                                <th className="text-left p-2 font-semibold text-neutral-700">Status</th>
+                                <th className="text-left p-2 font-semibold text-neutral-700">Cost</th>
+                                <th className="text-left p-2 font-semibold text-neutral-700">Sent At</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {deliverabilityData.records.map((record: any, i: number) => (
+                                <tr key={record.uuid || i} className="border-b border-neutral-100 hover:bg-neutral-50">
+                                  <td className="p-2 font-mono text-neutral-800">{record.cld || '—'}</td>
+                                  <td className="p-2 font-mono text-neutral-600">{record.cli || '—'}</td>
+                                  <td className="p-2">
+                                    <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${
+                                      record.status === 'delivered'
+                                        ? 'bg-green-100 text-green-700'
+                                        : record.status === 'failed' || record.status === 'undelivered'
+                                        ? 'bg-red-100 text-red-700'
+                                        : 'bg-yellow-100 text-yellow-700'
+                                    }`}>
+                                      {record.status || '—'}
+                                    </span>
+                                  </td>
+                                  <td className="p-2 text-neutral-600">
+                                    {record.cost ? `$${parseFloat(record.cost).toFixed(4)}` : '—'}
+                                  </td>
+                                  <td className="p-2 text-neutral-500">
+                                    {record.created_at ? new Date(record.created_at).toLocaleString() : '—'}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {!deliverabilityLoading && !deliverabilityData && executions.length === 0 && (
+                  <div className="text-center py-8 bg-neutral-50 rounded-lg border border-neutral-200">
+                    <BarChart3 className="w-10 h-10 mx-auto text-neutral-300 mb-2" />
+                    <p className="text-sm font-medium text-neutral-700">No executions yet</p>
+                    <p className="text-xs text-neutral-500">Run your campaign first to see deliverability data</p>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
