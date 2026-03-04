@@ -11,49 +11,63 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const params = new URLSearchParams({
-      'filter[record_type]': 'messaging',
-      'filter[direction]': 'outbound',
-      'page[size]': '250',
-    })
+    const allRecords: any[] = []
+    let page = 1
+    let totalPages = 1
 
-    if (startDate) params.set('filter[created_at][gte]', startDate)
-    if (endDate) params.set('filter[created_at][lte]', endDate)
+    // Paginate through all pages (Telnyx caps at 50 per page)
+    do {
+      const params = new URLSearchParams({
+        'filter[record_type]': 'messaging',
+        'filter[direction]': 'outbound',
+        'page[size]': '50',
+        'page[number]': String(page),
+      })
 
-    const response = await fetch(
-      `https://api.telnyx.com/v2/detail_records?${params.toString()}`,
-      {
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-        },
-      }
-    )
+      if (startDate) params.set('filter[created_at][gte]', startDate)
+      if (endDate) params.set('filter[created_at][lte]', endDate)
 
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({}))
-      return NextResponse.json(
-        { error: err.errors?.[0]?.detail || 'Telnyx API error' },
-        { status: response.status }
+      const response = await fetch(
+        `https://api.telnyx.com/v2/detail_records?${params.toString()}`,
+        {
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+          },
+        }
       )
-    }
 
-    const data = await response.json()
-    const records: any[] = data.data || []
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}))
+        return NextResponse.json(
+          { error: err.errors?.[0]?.detail || 'Telnyx API error' },
+          { status: response.status }
+        )
+      }
 
-    const delivered = records.filter((r) => r.status === 'delivered').length
-    const failed = records.filter((r) =>
+      const data = await response.json()
+      const records: any[] = data.data || []
+      allRecords.push(...records)
+
+      totalPages = data.meta?.total_pages ?? 1
+      page++
+
+      // Safety cap: max 20 pages (1000 records)
+      if (page > 20) break
+    } while (page <= totalPages)
+
+    const delivered = allRecords.filter((r) => r.status === 'delivered').length
+    const failed = allRecords.filter((r) =>
       ['failed', 'undelivered', 'delivery_failed'].includes(r.status)
     ).length
-    const sent = records.filter((r) => r.status === 'sent').length
-    const total = records.length
+    const sent = allRecords.filter((r) => r.status === 'sent').length
+    const total = allRecords.length
     const deliveryRate = total > 0 ? Math.round((delivered / total) * 100) : 0
 
     return NextResponse.json({
       success: true,
       stats: { total, delivered, failed, sent, deliveryRate },
-      records: records.slice(0, 100),
-      meta: data.meta,
+      records: allRecords,
     })
   } catch (error: any) {
     console.error('Deliverability API error:', error)
