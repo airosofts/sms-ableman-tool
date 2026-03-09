@@ -56,6 +56,62 @@ export async function GET(request: NextRequest) {
       if (page > 20) break
     } while (page <= totalPages)
 
+    // For failed records, fetch individual message details from Telnyx to get error codes
+    const failedRecords = allRecords.filter((r) =>
+      ['failed', 'undelivered', 'delivery_failed'].includes(r.status)
+    )
+
+    // Debug: capture first failed record raw data and first messages API response
+    let debugInfo: any = null
+
+    if (failedRecords.length > 0) {
+      const firstFailed = failedRecords[0]
+      debugInfo = {
+        firstFailedRecord: firstFailed,
+        recordKeys: Object.keys(firstFailed),
+        messageId: firstFailed.uuid || firstFailed.id || firstFailed.message_id || null,
+      }
+
+      await Promise.all(
+        failedRecords.slice(0, 100).map(async (record) => {
+          // Try uuid, then id, then message_id
+          const messageId = record.uuid || record.id || record.message_id
+          if (!messageId) return
+          try {
+            const msgRes = await fetch(
+              `https://api.telnyx.com/v2/messages/${messageId}`,
+              { headers: { Authorization: `Bearer ${apiKey}` } }
+            )
+            const msgData = await msgRes.json()
+
+            // Capture debug for first record
+            if (record === firstFailed) {
+              debugInfo.messagesApiStatus = msgRes.status
+              debugInfo.messagesApiResponse = msgData
+            }
+
+            if (msgRes.ok) {
+              const errors = msgData.data?.errors || []
+              if (errors.length > 0) {
+                record.error_code = errors[0].code
+                record.error_detail = errors[0].title || errors[0].detail || ''
+              }
+              // Also check to[].status for carrier-level errors
+              const toErrors = msgData.data?.to?.[0]?.errors || []
+              if (!record.error_code && toErrors.length > 0) {
+                record.error_code = toErrors[0].code
+                record.error_detail = toErrors[0].title || toErrors[0].detail || ''
+              }
+            }
+          } catch (e: any) {
+            if (record === firstFailed) {
+              debugInfo.messagesApiError = e.message
+            }
+          }
+        })
+      )
+    }
+
     const delivered = allRecords.filter((r) => r.status === 'delivered').length
     const failed = allRecords.filter((r) =>
       ['failed', 'undelivered', 'delivery_failed'].includes(r.status)
@@ -68,6 +124,7 @@ export async function GET(request: NextRequest) {
       success: true,
       stats: { total, delivered, failed, sent, deliveryRate },
       records: allRecords,
+      debug: debugInfo,
     })
   } catch (error: any) {
     console.error('Deliverability API error:', error)

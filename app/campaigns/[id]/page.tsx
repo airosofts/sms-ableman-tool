@@ -30,6 +30,36 @@ import {
 import { authUtils } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
 
+const TELNYX_ERROR_CODES: Record<string, string> = {
+  '10001': 'Resource not found',
+  '10002': 'Connection not available',
+  '10003': 'Invalid destination number',
+  '10004': 'Network not supported',
+  '10005': 'Message undeliverable',
+  '10006': 'Rejected by carrier',
+  '10007': 'Invalid SMSC address',
+  '10008': 'Message expired',
+  '10015': 'Rate limit exceeded',
+  '10016': 'Invalid source number',
+  '10017': 'Invalid destination number',
+  '10018': 'Content blocked by carrier',
+  '10019': 'No route to destination',
+  '10020': 'Recipient opted out',
+  '10022': 'Message blocked',
+  '10024': 'Destination not reachable',
+  '10025': 'Landline or unreachable device',
+  '10026': 'Subscriber absent',
+  '10028': 'Roaming restriction',
+  '10029': 'Failed due to anti-spam filter',
+  '10032': 'Message too long',
+  '40003': 'Invalid payload',
+  '40007': 'Message rejected',
+  '40012': 'Invalid content type',
+  '90001': 'Insufficient funds',
+  '90002': 'Landline number',
+  '90003': 'Carrier rejected',
+};
+
 export default function CampaignDetailsPage() {
   const router = useRouter();
   const params = useParams();
@@ -177,6 +207,16 @@ export default function CampaignDetailsPage() {
     if (executions.length === 0) return;
     setDeliverabilityLoading(true);
     try {
+      // Fetch all message logs for this campaign to get known recipient phones
+      const { data: allLogs } = await supabase
+        .from('message_logs')
+        .select('recipient_phone')
+        .eq('campaign_id', campaignId);
+
+      const campaignPhones = new Set(
+        (allLogs || []).map((l: any) => l.recipient_phone).filter(Boolean)
+      );
+
       const sorted = [...executions].sort(
         (a, b) => new Date(a.started_at).getTime() - new Date(b.started_at).getTime()
       );
@@ -187,8 +227,28 @@ export default function CampaignDetailsPage() {
       const params = new URLSearchParams({ start_date: startDate, end_date: endDate });
       const res = await fetch(`/api/deliverability?${params}`);
       const data = await res.json();
-      if (data.success) setDeliverabilityData(data);
-      else setDeliverabilityData({ error: data.error });
+
+      if (data.success) {
+        // Filter to only records matching this campaign's recipients
+        if (campaignPhones.size > 0) {
+          data.records = data.records.filter((r: any) => campaignPhones.has(r.cld));
+          const delivered = data.records.filter((r: any) => r.status === 'delivered').length;
+          const failed = data.records.filter((r: any) =>
+            ['failed', 'undelivered', 'delivery_failed'].includes(r.status)
+          ).length;
+          const total = data.records.length;
+          data.stats = {
+            total,
+            delivered,
+            failed,
+            sent: data.records.filter((r: any) => r.status === 'sent').length,
+            deliveryRate: total > 0 ? Math.round((delivered / total) * 100) : 0,
+          };
+        }
+        setDeliverabilityData(data);
+      } else {
+        setDeliverabilityData({ error: data.error });
+      }
     } catch (err: any) {
       setDeliverabilityData({ error: err.message });
     } finally {
@@ -1373,6 +1433,7 @@ export default function CampaignDetailsPage() {
                                 <th className="text-left p-2 font-semibold text-neutral-700">To</th>
                                 <th className="text-left p-2 font-semibold text-neutral-700">From</th>
                                 <th className="text-left p-2 font-semibold text-neutral-700">Status</th>
+                                <th className="text-left p-2 font-semibold text-neutral-700">Error Code</th>
                                 <th className="text-left p-2 font-semibold text-neutral-700">Cost</th>
                                 <th className="text-left p-2 font-semibold text-neutral-700">Sent At</th>
                               </tr>
@@ -1392,6 +1453,16 @@ export default function CampaignDetailsPage() {
                                     }`}>
                                       {record.status || '—'}
                                     </span>
+                                  </td>
+                                  <td className="p-2">
+                                    {record.error_code ? (
+                                      <div>
+                                        <span className="font-mono text-xs text-red-700 font-semibold">{record.error_code}</span>
+                                        <div className="text-xs text-neutral-500 mt-0.5">
+                                          {record.error_detail || TELNYX_ERROR_CODES[String(record.error_code)] || 'Unknown error'}
+                                        </div>
+                                      </div>
+                                    ) : '—'}
                                   </td>
                                   <td className="p-2 text-neutral-600">
                                     {record.cost ? `$${parseFloat(record.cost).toFixed(4)}` : '—'}
